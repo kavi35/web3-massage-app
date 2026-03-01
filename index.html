@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Blockchain Messenger - Base L2</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>⚡ Blockchain Messenger</h1>
+        <p class="subtitle">Send messages through Base L2 Network</p>
+      </header>
+
+      <div class="card">
+        <div class="wallet-section">
+          <h2>Wallet Connection</h2>
+          <button id="connectBtn" class="btn btn-primary">
+            Connect Wallet
+          </button>
+          <div id="walletInfo" class="wallet-info" style="display: none">
+            <p><strong>Connected Address:</strong></p>
+            <p id="walletAddress" class="address"></p>
+            <button id="disconnectBtn" class="btn btn-secondary">
+              Disconnect
+            </button>
+          </div>
+          <div id="networkStatus" class="network-status" style="display: none">
+            <p id="networkInfo"></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="messaging-section">
+          <h2>Send Message</h2>
+          <form id="messageForm">
+            <div class="form-group">
+              <label for="recipientAddress">Recipient Address:</label>
+              <input
+                type="text"
+                id="recipientAddress"
+                placeholder="0x..."
+                required
+                pattern="^0x[a-fA-F0-9]{40}$"
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="messageText">Message:</label>
+              <textarea
+                id="messageText"
+                placeholder="Type your message here..."
+                required
+                maxlength="500"
+                rows="4"
+              ></textarea>
+              <small id="charCount">0/500 characters</small>
+            </div>
+
+            <button type="submit" class="btn btn-success" id="sendBtn" disabled>
+              Send Message
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="messages-section">
+          <h2>Received Messages</h2>
+          <div id="messagesList" class="messages-list">
+            <p class="empty-state">
+              No messages yet. Connect wallet to view messages.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="sent-messages-section">
+          <h2>Sent Messages</h2>
+          <div id="sentMessagesList" class="messages-list">
+            <p class="empty-state">
+              No sent messages yet. Send a message to see it here.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div id="notification" class="notification" style="display: none"></div>
+    </div>
+
+    <script src="https://unpkg.com/ethers@6.7.1/dist/ethers.umd.min.js"></script>
+    <script src="script.js"></script>
+  </body>
+</html>

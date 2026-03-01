@@ -1,0 +1,29 @@
+{
+  "name": "blockchain-messenger",
+  "version": "1.0.0",
+  "description": "Simple messaging application on Base L2 network",
+  "main": "script.js",
+  "scripts": {
+    "start": "npx http-server -p 8000",
+    "deploy:base": "npx hardhat run scripts/deploy.js --network base",
+    "deploy:base-sepolia": "npx hardhat run scripts/deploy.js --network baseSepolia"
+  },
+  "keywords": [
+    "blockchain",
+    "ethereum",
+    "base",
+    "messaging",
+    "web3",
+    "decentralized"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "hardhat": "^2.17.0",
+    "@nomiclabs/hardhat-ethers": "^2.2.3",
+    "@nomicfoundation/hardhat-verify": "^2.0.0"
+  },
+  "dependencies": {
+    "ethers": "^6.0.0"
+  }
+}
