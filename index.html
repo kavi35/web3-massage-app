@@ -16,6 +16,19 @@
       <div class="card">
         <div class="wallet-section">
           <h2>Wallet Connection</h2>
+          <div class="network-selector" style="margin-bottom: 15px">
+            <label for="networkSelect">Select Network:</label>
+            <select
+              id="networkSelect"
+              class="btn"
+              style="padding: 8px 12px; border-radius: 5px"
+            >
+              <option value="base-mainnet">Base Mainnet</option>
+              <option value="base-sepolia" selected>
+                Base Sepolia (Testnet)
+              </option>
+            </select>
+          </div>
           <button id="connectBtn" class="btn btn-primary">
             Connect Wallet
           </button>

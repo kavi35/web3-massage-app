@@ -1,13 +1,37 @@
-// Contract Configuration
-const CONTRACT_ADDRESS = "0x0000000000000000000000000000000000000000"; // Update after deployment
-const BASE_CHAIN_ID = 8453; // Base Mainnet
-const BASE_RPC = "https://mainnet.base.org";
+// Network Configuration
+const NETWORKS = {
+  "base-mainnet": {
+    chainId: 8453,
+    chainIdHex: "0x2105",
+    rpcUrl: "https://mainnet.base.org",
+    name: "Base Mainnet",
+    contractAddress: "0x0000000000000000000000000000000000000000", // Update with mainnet deployment
+    explorerUrl: "https://basescan.org",
+    symbol: "ETH",
+  },
+  "base-sepolia": {
+    chainId: 84532,
+    chainIdHex: "0x14a34",
+    rpcUrl: "https://sepolia.base.org",
+    name: "Base Sepolia (Testnet)",
+    contractAddress: "0x5C2f1E2c7094E65AAA3cF2dfd612A685b2C9D5a9", // Deployed on Base Sepolia
+    explorerUrl: "https://sepolia.basescan.org",
+    symbol: "ETH",
+  },
+};
 
-// Simple Message Contract ABI (without deployment, messages stored locally)
+let selectedNetwork = "base-sepolia"; // Default network
+let CONTRACT_ADDRESS = NETWORKS[selectedNetwork].contractAddress;
+let BASE_CHAIN_ID = NETWORKS[selectedNetwork].chainId;
+let BASE_RPC = NETWORKS[selectedNetwork].rpcUrl;
+
+// Simple Message Contract ABI
 const CONTRACT_ABI = [
   "function sendMessage(address recipient, string memory message) public",
-  "function getMessages(address user) public view returns (tuple(address sender, address recipient, string message, uint256 timestamp)[])",
-  "event MessageSent(indexed address sender, indexed address recipient, string message, uint256 timestamp)",
+  "function getReceivedMessages(address user) public view returns (tuple(address sender, address recipient, string messageText, uint256 timestamp)[])",
+  "function getSentMessages(address user) public view returns (tuple(address sender, address recipient, string messageText, uint256 timestamp)[])",
+  "function getTotalMessageCount() public view returns (uint256)",
+  "event MessageSent(indexed address sender, indexed address recipient, string messageText, uint256 timestamp)",
 ];
 
 let currentAccount = null;
@@ -29,6 +53,7 @@ const sentMessagesList = document.getElementById("sentMessagesList");
 const charCount = document.getElementById("charCount");
 const messageText = document.getElementById("messageText");
 const notification = document.getElementById("notification");
+const networkSelect = document.getElementById("networkSelect");
 
 // Initialize
 document.addEventListener("DOMContentLoaded", () => {
@@ -45,6 +70,7 @@ document.addEventListener("DOMContentLoaded", () => {
   disconnectBtn.addEventListener("click", disconnectWallet);
   messageForm.addEventListener("submit", sendMessage);
   messageText.addEventListener("input", updateCharCount);
+  networkSelect.addEventListener("change", handleNetworkChange);
 
   // Check if wallet is already connected
   checkIfWalletConnected();
@@ -95,6 +121,9 @@ async function connectWallet() {
     const network = await provider.getNetwork();
     if (network.chainId !== BigInt(BASE_CHAIN_ID)) {
       await switchToBaseNetwork();
+      // Re-initialize provider and signer after network switch
+      provider = new ethers.BrowserProvider(window.ethereum);
+      signer = await provider.getSigner();
     }
 
     // Initialize contract (use provider for read-only initially)
@@ -104,9 +133,10 @@ async function connectWallet() {
       await loadMessages();
       await loadSentMessages();
     } else {
+      contract = null;
       showNotification(
-        "Contract not yet deployed. Using local message storage.",
-        "info",
+        "Contract not yet deployed on this network. Using local message storage.",
+        "warning",
       );
       await loadMessages();
       await loadSentMessages();
@@ -132,10 +162,11 @@ async function connectWallet() {
 }
 
 async function switchToBaseNetwork() {
+  const network = NETWORKS[selectedNetwork];
   try {
     await window.ethereum.request({
       method: "wallet_switchEthereumChain",
-      params: [{ chainId: "0x2105" }], // 8453 in hex
+      params: [{ chainId: network.chainIdHex }],
     });
   } catch (switchError) {
     if (switchError.code === 4902) {
@@ -145,24 +176,64 @@ async function switchToBaseNetwork() {
           method: "wallet_addEthereumChain",
           params: [
             {
-              chainId: "0x2105",
-              chainName: "Base",
-              rpcUrls: ["https://mainnet.base.org"],
+              chainId: network.chainIdHex,
+              chainName: network.name,
+              rpcUrls: [network.rpcUrl],
               nativeCurrency: {
                 name: "Ether",
-                symbol: "ETH",
+                symbol: network.symbol,
                 decimals: 18,
               },
-              blockExplorerUrls: ["https://basescan.org"],
+              blockExplorerUrls: [network.explorerUrl],
             },
           ],
         });
       } catch (addError) {
-        showNotification("Failed to add Base network.", "error");
+        showNotification(`Failed to add ${network.name} network.`, "error");
         throw addError;
       }
     } else {
       throw switchError;
+    }
+  }
+}
+
+async function handleNetworkChange(event) {
+  selectedNetwork = event.target.value;
+  const network = NETWORKS[selectedNetwork];
+
+  // Update global variables
+  CONTRACT_ADDRESS = network.contractAddress;
+  BASE_CHAIN_ID = network.chainId;
+  BASE_RPC = network.rpcUrl;
+
+  showNotification(`Network switched to ${network.name}`, "info");
+
+  // If wallet is connected, switch to the new network
+  if (currentAccount) {
+    try {
+      await switchToBaseNetwork();
+
+      // Reinitialize provider and signer for the new network
+      provider = new ethers.BrowserProvider(window.ethereum);
+      signer = await provider.getSigner();
+
+      // Reinitialize contract with new network
+      if (CONTRACT_ADDRESS !== "0x0000000000000000000000000000000000000000") {
+        contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+      } else {
+        contract = null;
+        showNotification(
+          "No contract deployed on this network. Using local storage.",
+          "warning",
+        );
+      }
+
+      updateWalletUI();
+      await loadMessages();
+      await loadSentMessages();
+    } catch (error) {
+      showNotification(`Failed to switch network: ${error.message}`, "error");
     }
   }
 }
@@ -177,6 +248,7 @@ function disconnectWallet() {
   networkStatus.style.display = "none";
   connectBtn.style.display = "block";
   sendBtn.disabled = true;
+  networkSelect.disabled = false; // Enable network selection when disconnected
   messagesList.innerHTML =
     '<p class="empty-state">Wallet disconnected. Connect to view messages.</p>';
   sentMessagesList.innerHTML =
@@ -191,7 +263,8 @@ function updateWalletUI() {
   connectBtn.style.display = "none";
 
   networkStatus.style.display = "block";
-  networkInfo.textContent = "✓ Connected to Base L2 Network";
+  const network = NETWORKS[selectedNetwork];
+  networkInfo.textContent = `✓ Connected to ${network.name}`;
 }
 
 async function sendMessage(event) {
@@ -225,6 +298,14 @@ async function sendMessage(event) {
       const tx = await contract.sendMessage(recipientAddress, messageContent);
       showNotification("Transaction sent! Waiting for confirmation...", "info");
       await tx.wait();
+
+      // Also save to local storage for immediate display
+      await sendMessageLocally(
+        currentAccount,
+        recipientAddress,
+        messageContent,
+      );
+
       showNotification("Message sent successfully!", "success");
     } else {
       // Use local storage fallback
@@ -270,16 +351,38 @@ async function loadMessages() {
   }
 
   try {
-    // Load from local storage as fallback
-    const storedMessages = getMessagesFromLocalStorage(currentAccount);
+    let messages = [];
 
-    if (storedMessages.length === 0) {
+    // Try to load from contract if available
+    if (contract) {
+      try {
+        const contractMessages =
+          await contract.getReceivedMessages(currentAccount);
+        messages = contractMessages.map((msg) => ({
+          sender: msg.sender,
+          recipient: msg.recipient,
+          message: msg.messageText,
+          timestamp: Number(msg.timestamp),
+        }));
+      } catch (contractError) {
+        console.log(
+          "Could not fetch from contract, using local storage:",
+          contractError,
+        );
+        messages = getMessagesFromLocalStorage(currentAccount);
+      }
+    } else {
+      // Fallback to local storage
+      messages = getMessagesFromLocalStorage(currentAccount);
+    }
+
+    if (messages.length === 0) {
       messagesList.innerHTML =
         '<p class="empty-state">No messages yet. Send one to get started!</p>';
       return;
     }
 
-    messagesList.innerHTML = storedMessages
+    messagesList.innerHTML = messages
       .map(
         (msg) => `
             <div class="message-item">
@@ -307,8 +410,29 @@ async function loadSentMessages() {
   }
 
   try {
-    // Load sent messages from local storage
-    const sentMessages = getSentMessagesFromLocalStorage(currentAccount);
+    let sentMessages = [];
+
+    // Try to load from contract if available
+    if (contract) {
+      try {
+        const contractMessages = await contract.getSentMessages(currentAccount);
+        sentMessages = contractMessages.map((msg) => ({
+          sender: msg.sender,
+          recipient: msg.recipient,
+          message: msg.messageText,
+          timestamp: Number(msg.timestamp),
+        }));
+      } catch (contractError) {
+        console.log(
+          "Could not fetch from contract, using local storage:",
+          contractError,
+        );
+        sentMessages = getSentMessagesFromLocalStorage(currentAccount);
+      }
+    } else {
+      // Fallback to local storage
+      sentMessages = getSentMessagesFromLocalStorage(currentAccount);
+    }
 
     if (sentMessages.length === 0) {
       sentMessagesList.innerHTML =

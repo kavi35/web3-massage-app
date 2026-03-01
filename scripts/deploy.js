@@ -12,7 +12,13 @@ async function main() {
 
   try {
     // Get signer
-    const [deployer] = await hre.ethers.getSigners();
+    const signers = await hre.ethers.getSigners();
+    if (signers.length === 0) {
+      throw new Error(
+        "No signers available. Check your PRIVATE_KEY in .env file.",
+      );
+    }
+    const deployer = signers[0];
     console.log("Deploying contract with account:", deployer.address);
 
     // Get account balance
