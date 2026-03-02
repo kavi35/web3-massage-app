@@ -40,8 +40,8 @@ A simple decentralized messaging application built on Base L2 network that allow
 
 #### With Smart Contract (On-Chain)
 
-1. Deploy the smart contract to Base L2
-2. Update `CONTRACT_ADDRESS` in `script.js`
+1. Deploy the smart contract to Base Mainnet or Base Sepolia
+2. Update the matching `NETWORKS["base-mainnet"].contractAddress` or `NETWORKS["base-sepolia"].contractAddress` in `script.js`
 3. Messages are stored on the blockchain permanently
 
 ## Smart Contract Deployment
@@ -50,12 +50,13 @@ A simple decentralized messaging application built on Base L2 network that allow
 
 ```bash
 # Install dependencies
-npm install -D hardhat @nomiclabs/hardhat-ethers ethers
+npm install
 
-# Initialize Hardhat
-npx hardhat
+# Deploy to Base Sepolia (testnet)
+npm run deploy:base-sepolia
 
-# Create hardhat.config.js with Base configuration
+# Deploy to Base Mainnet
+npm run deploy:base
 ```
 
 **hardhat.config.js example:**
@@ -106,10 +107,29 @@ module.exports = {
 
 ### Update Contract Address
 
-After deploying the smart contract, update `script.js`:
+After deploying the smart contract, update `script.js` network mapping:
 
 ```javascript
-const CONTRACT_ADDRESS = "0x..."; // Your deployed contract address
+const NETWORKS = {
+  "base-mainnet": {
+    // ...
+    contractAddress: "0xYOUR_BASE_MAINNET_CONTRACT",
+  },
+  "base-sepolia": {
+    // ...
+    contractAddress: "0xYOUR_BASE_SEPOLIA_CONTRACT",
+  },
+};
+```
+
+### Verify Contract
+
+```bash
+# Verify Base Sepolia deployment
+npm run verify:base-sepolia -- <DEPLOYED_ADDRESS>
+
+# Verify Base Mainnet deployment
+npm run verify:base -- <DEPLOYED_ADDRESS>
 ```
 
 ## File Structure

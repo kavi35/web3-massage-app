@@ -5,7 +5,7 @@ const NETWORKS = {
     chainIdHex: "0x2105",
     rpcUrl: "https://mainnet.base.org",
     name: "Base Mainnet",
-    contractAddress: "0x0000000000000000000000000000000000000000", // Update with mainnet deployment
+    contractAddress: "0xE28CB05F55438Cc2F878CF962CF5CA8B38a88418", // Deployed on Base Mainnet
     explorerUrl: "https://basescan.org",
     symbol: "ETH",
   },
@@ -20,10 +20,11 @@ const NETWORKS = {
   },
 };
 
-let selectedNetwork = "base-sepolia"; // Default network
+let selectedNetwork = "base-mainnet"; // Default network
 let CONTRACT_ADDRESS = NETWORKS[selectedNetwork].contractAddress;
 let BASE_CHAIN_ID = NETWORKS[selectedNetwork].chainId;
 let BASE_RPC = NETWORKS[selectedNetwork].rpcUrl;
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 // Simple Message Contract ABI
 const CONTRACT_ABI = [
@@ -97,6 +98,10 @@ async function checkIfWalletConnected() {
   }
 }
 
+function hasDeployedContract() {
+  return CONTRACT_ADDRESS !== ZERO_ADDRESS;
+}
+
 async function connectWallet() {
   if (typeof window.ethereum === "undefined") {
     showNotification(
@@ -128,14 +133,14 @@ async function connectWallet() {
 
     // Initialize contract (use provider for read-only initially)
     // Note: Contract address would be set after deployment
-    if (CONTRACT_ADDRESS !== "0x0000000000000000000000000000000000000000") {
+    if (hasDeployedContract()) {
       contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
       await loadMessages();
       await loadSentMessages();
     } else {
       contract = null;
       showNotification(
-        "Contract not yet deployed on this network. Using local message storage.",
+        `No deployed contract found for ${NETWORKS[selectedNetwork].name}. Deploy first, then update contractAddress in script.js.`,
         "warning",
       );
       await loadMessages();
@@ -219,12 +224,12 @@ async function handleNetworkChange(event) {
       signer = await provider.getSigner();
 
       // Reinitialize contract with new network
-      if (CONTRACT_ADDRESS !== "0x0000000000000000000000000000000000000000") {
+      if (hasDeployedContract()) {
         contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
       } else {
         contract = null;
         showNotification(
-          "No contract deployed on this network. Using local storage.",
+          `No deployed contract found for ${network.name}. Deploy first, then update contractAddress in script.js.`,
           "warning",
         );
       }
