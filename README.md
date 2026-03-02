@@ -2,6 +2,10 @@
 
 A simple decentralized messaging application built on Base L2 network that allows users to send messages through their blockchain wallet.
 
+## 🌐 Live Demo
+
+[👉 Open Blockchain Messenger App](https://web3-massage-app.vercel.app/)
+
 ## Features
 
 ✨ **Wallet Connection** - Connect MetaMask or other Web3 wallets
