@@ -5,103 +5,180 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="base:app_id" content="69a51def446dc974717628b4" />
     <title>Blockchain Messenger - Base L2</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <div class="container">
-      <header>
-        <h1>⚡ Blockchain Messenger</h1>
-        <p class="subtitle">Send messages through Base L2 Network</p>
+    <div class="bg-shape bg-shape-1" aria-hidden="true"></div>
+    <div class="bg-shape bg-shape-2" aria-hidden="true"></div>
+    <div class="bg-grid" aria-hidden="true"></div>
+
+    <main class="container">
+      <header class="hero">
+        <p class="kicker">Base L2 Communication Console</p>
+        <h1>Blockchain Messenger</h1>
+        <p class="subtitle">
+          Securely connect your wallet, switch networks, and send on-chain
+          messages with a cleaner workflow.
+        </p>
       </header>
 
-      <div class="card">
-        <div class="wallet-section">
-          <h2>Wallet Connection</h2>
-          <div class="network-selector" style="margin-bottom: 15px">
-            <label for="networkSelect">Select Network:</label>
-            <select
-              id="networkSelect"
-              class="btn"
-              style="padding: 8px 12px; border-radius: 5px"
+      <section class="grid-top">
+        <div class="card">
+          <div class="section-head">
+            <h2>Wallet & Network</h2>
+            <span class="chip">Step 1</span>
+          </div>
+
+          <div class="wallet-section">
+            <div class="network-selector">
+              <label for="networkSelect">Select Network</label>
+              <select id="networkSelect" class="input-control select-control">
+                <option value="base-mainnet" selected>Base Mainnet</option>
+                <option value="base-sepolia">Base Sepolia (Testnet)</option>
+              </select>
+            </div>
+
+            <button id="connectBtn" class="btn btn-primary">
+              Connect Wallet
+            </button>
+
+            <div id="walletInfo" class="wallet-info" style="display: none">
+              <p class="meta-label">Connected Address</p>
+              <p id="walletAddress" class="address"></p>
+              <button id="disconnectBtn" class="btn btn-secondary">
+                Disconnect
+              </button>
+            </div>
+
+            <div
+              id="networkStatus"
+              class="network-status"
+              style="display: none"
             >
-              <option value="base-mainnet" selected>Base Mainnet</option>
-              <option value="base-sepolia">Base Sepolia (Testnet)</option>
-            </select>
-          </div>
-          <button id="connectBtn" class="btn btn-primary">
-            Connect Wallet
-          </button>
-          <div id="walletInfo" class="wallet-info" style="display: none">
-            <p><strong>Connected Address:</strong></p>
-            <p id="walletAddress" class="address"></p>
-            <button id="disconnectBtn" class="btn btn-secondary">
-              Disconnect
-            </button>
-          </div>
-          <div id="networkStatus" class="network-status" style="display: none">
-            <p id="networkInfo"></p>
+              <p id="networkInfo"></p>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div class="card">
-        <div class="messaging-section">
-          <h2>Send Message</h2>
-          <form id="messageForm">
-            <div class="form-group">
-              <label for="recipientAddress">Recipient Address:</label>
-              <input
-                type="text"
-                id="recipientAddress"
-                placeholder="0x..."
-                required
-                pattern="^0x[a-fA-F0-9]{40}$"
-              />
-            </div>
+        <div class="card">
+          <div class="section-head">
+            <h2>Compose Message</h2>
+            <span class="chip">Step 2</span>
+          </div>
 
-            <div class="form-group">
-              <label for="messageText">Message:</label>
-              <textarea
-                id="messageText"
-                placeholder="Type your message here..."
-                required
-                maxlength="500"
-                rows="4"
-              ></textarea>
-              <small id="charCount">0/500 characters</small>
-            </div>
+          <div class="messaging-section">
+            <form id="messageForm">
+              <div class="form-group">
+                <label for="recipientAddress">Recipient Address</label>
+                <input
+                  type="text"
+                  id="recipientAddress"
+                  class="input-control"
+                  placeholder="0x..."
+                  required
+                  pattern="^0x[a-fA-F0-9]{40}$"
+                />
+              </div>
 
-            <button type="submit" class="btn btn-success" id="sendBtn" disabled>
-              Send Message
-            </button>
-          </form>
+              <div class="form-group">
+                <label for="messageText">Message</label>
+                <textarea
+                  id="messageText"
+                  class="input-control"
+                  placeholder="Type your message here..."
+                  required
+                  maxlength="500"
+                  rows="5"
+                ></textarea>
+                <small id="charCount">0/500 characters</small>
+              </div>
+
+              <button
+                type="submit"
+                class="btn btn-success"
+                id="sendBtn"
+                disabled
+              >
+                Send Message
+              </button>
+            </form>
+          </div>
         </div>
-      </div>
+      </section>
 
-      <div class="card">
-        <div class="messages-section">
-          <h2>Received Messages</h2>
-          <div id="messagesList" class="messages-list">
+      <section class="grid-messages">
+        <div class="card">
+          <div class="section-head">
+            <h2>Received Messages</h2>
+            <span class="chip">Inbox</span>
+          </div>
+          <div class="messages-section">
+            <div id="messagesList" class="messages-list">
+              <p class="empty-state">
+                No messages yet. Connect wallet to view messages.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="section-head">
+            <h2>Sent Messages</h2>
+            <span class="chip">Outbox</span>
+          </div>
+          <div class="sent-messages-section">
+            <div id="sentMessagesList" class="messages-list">
+              <p class="empty-state">
+                No sent messages yet. Send a message to see it here.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="grid-conversations">
+        <div class="card conversations-card">
+          <div class="section-head">
+            <h2>Conversations</h2>
+            <span class="chip">Step 3</span>
+          </div>
+
+          <div class="conversation-toolbar">
+            <input
+              id="conversationSearch"
+              class="input-control"
+              type="text"
+              placeholder="Search by wallet address..."
+            />
+          </div>
+
+          <div id="conversationList" class="conversation-list">
+            <p class="empty-state">Connect wallet to view conversations.</p>
+          </div>
+        </div>
+
+        <div class="card chat-card">
+          <div class="section-head">
+            <h2 id="chatTitle">Conversation</h2>
+            <span id="chatPeerBadge" class="chip">Select a chat</span>
+          </div>
+
+          <div id="chatMessages" class="chat-messages">
             <p class="empty-state">
-              No messages yet. Connect wallet to view messages.
+              Select a conversation to view chat history.
             </p>
           </div>
         </div>
-      </div>
-
-      <div class="card">
-        <div class="sent-messages-section">
-          <h2>Sent Messages</h2>
-          <div id="sentMessagesList" class="messages-list">
-            <p class="empty-state">
-              No sent messages yet. Send a message to see it here.
-            </p>
-          </div>
-        </div>
-      </div>
+      </section>
 
       <div id="notification" class="notification" style="display: none"></div>
-    </div>
+    </main>
 
     <script src="https://unpkg.com/ethers@6.7.1/dist/ethers.umd.min.js"></script>
     <script src="script.js"></script>

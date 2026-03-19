@@ -5,7 +5,7 @@ const NETWORKS = {
     chainIdHex: "0x2105",
     rpcUrl: "https://mainnet.base.org",
     name: "Base Mainnet",
-    contractAddress: "0xE28CB05F55438Cc2F878CF962CF5CA8B38a88418", // Deployed on Base Mainnet
+    contractAddress: "0xE28CB05F55438Cc2F878CF962CF5CA8B38a88418",
     explorerUrl: "https://basescan.org",
     symbol: "ETH",
   },
@@ -14,19 +14,17 @@ const NETWORKS = {
     chainIdHex: "0x14a34",
     rpcUrl: "https://sepolia.base.org",
     name: "Base Sepolia (Testnet)",
-    contractAddress: "0x5C2f1E2c7094E65AAA3cF2dfd612A685b2C9D5a9", // Deployed on Base Sepolia
+    contractAddress: "0x5C2f1E2c7094E65AAA3cF2dfd612A685b2C9D5a9",
     explorerUrl: "https://sepolia.basescan.org",
     symbol: "ETH",
   },
 };
 
-let selectedNetwork = "base-mainnet"; // Default network
+let selectedNetwork = "base-mainnet";
 let CONTRACT_ADDRESS = NETWORKS[selectedNetwork].contractAddress;
 let BASE_CHAIN_ID = NETWORKS[selectedNetwork].chainId;
-let BASE_RPC = NETWORKS[selectedNetwork].rpcUrl;
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
-// Simple Message Contract ABI
 const CONTRACT_ABI = [
   "function sendMessage(address recipient, string memory message) public",
   "function getReceivedMessages(address user) public view returns (tuple(address sender, address recipient, string messageText, uint256 timestamp)[])",
@@ -40,7 +38,10 @@ let provider = null;
 let signer = null;
 let contract = null;
 
-// Elements
+let currentUserMessages = [];
+let selectedConversationAddress = null;
+let conversationSearchTerm = "";
+
 const connectBtn = document.getElementById("connectBtn");
 const disconnectBtn = document.getElementById("disconnectBtn");
 const walletInfo = document.getElementById("walletInfo");
@@ -55,10 +56,13 @@ const charCount = document.getElementById("charCount");
 const messageText = document.getElementById("messageText");
 const notification = document.getElementById("notification");
 const networkSelect = document.getElementById("networkSelect");
+const conversationSearch = document.getElementById("conversationSearch");
+const conversationList = document.getElementById("conversationList");
+const chatMessages = document.getElementById("chatMessages");
+const chatTitle = document.getElementById("chatTitle");
+const chatPeerBadge = document.getElementById("chatPeerBadge");
 
-// Initialize
 document.addEventListener("DOMContentLoaded", () => {
-  // Wait for ethers to be defined
   if (typeof ethers === "undefined") {
     console.error("Ethers.js not loaded. Retrying...");
     setTimeout(() => {
@@ -73,10 +77,15 @@ document.addEventListener("DOMContentLoaded", () => {
   messageText.addEventListener("input", updateCharCount);
   networkSelect.addEventListener("change", handleNetworkChange);
 
-  // Check if wallet is already connected
+  if (conversationSearch) {
+    conversationSearch.addEventListener("input", (event) => {
+      conversationSearchTerm = event.target.value.trim().toLowerCase();
+      renderConversations();
+    });
+  }
+
   checkIfWalletConnected();
 
-  // Listen for account changes
   if (window.ethereum) {
     window.ethereum.on("accountsChanged", handleAccountsChanged);
     window.ethereum.on("chainChanged", handleChainChanged);
@@ -84,22 +93,95 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 async function checkIfWalletConnected() {
-  if (typeof window.ethereum !== "undefined") {
-    try {
-      const accounts = await window.ethereum.request({
-        method: "eth_accounts",
-      });
-      if (accounts.length > 0) {
-        await connectWallet();
-      }
-    } catch (err) {
-      console.log("Not connected:", err);
+  if (typeof window.ethereum === "undefined") return;
+
+  try {
+    const accounts = await window.ethereum.request({ method: "eth_accounts" });
+    if (accounts.length > 0) {
+      await connectWallet();
     }
+  } catch (err) {
+    console.log("Not connected:", err);
   }
 }
 
 function hasDeployedContract() {
   return CONTRACT_ADDRESS !== ZERO_ADDRESS;
+}
+
+function normalizeAddress(address) {
+  return String(address || "").toLowerCase();
+}
+
+function shortAddress(address) {
+  if (!address || address.length < 12) return address;
+  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
+
+function compareAddress(a, b) {
+  return normalizeAddress(a) === normalizeAddress(b);
+}
+
+function getReadStateKey() {
+  return `messageReadState:${normalizeAddress(currentAccount)}:${selectedNetwork}`;
+}
+
+function getReadState() {
+  if (!currentAccount) return {};
+  return JSON.parse(localStorage.getItem(getReadStateKey()) || "{}");
+}
+
+function setReadState(nextState) {
+  if (!currentAccount) return;
+  localStorage.setItem(getReadStateKey(), JSON.stringify(nextState));
+}
+
+function markConversationAsRead(peerAddress) {
+  if (!peerAddress) return;
+  const key = normalizeAddress(peerAddress);
+  const conversation = buildConversationThread(peerAddress);
+  if (conversation.length === 0) return;
+
+  const latestTimestamp = conversation[conversation.length - 1].timestamp;
+  const readState = getReadState();
+  readState[key] = latestTimestamp;
+  setReadState(readState);
+}
+
+function getUnreadCountForPeer(peerAddress) {
+  const peerKey = normalizeAddress(peerAddress);
+  const readState = getReadState();
+  const readUntil = Number(readState[peerKey] || 0);
+
+  return buildConversationThread(peerAddress).filter((msg) => {
+    const incoming = compareAddress(msg.recipient, currentAccount);
+    return incoming && msg.timestamp > readUntil;
+  }).length;
+}
+
+function normalizeMessage(msg) {
+  return {
+    sender: msg.sender,
+    recipient: msg.recipient,
+    message: msg.message,
+    timestamp: Number(msg.timestamp),
+  };
+}
+
+function dedupeMessages(messages) {
+  const seen = new Set();
+  return messages.filter((msg) => {
+    const key = [
+      normalizeAddress(msg.sender),
+      normalizeAddress(msg.recipient),
+      msg.message,
+      Number(msg.timestamp),
+    ].join("|");
+
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 async function connectWallet() {
@@ -112,47 +194,38 @@ async function connectWallet() {
   }
 
   try {
-    // Request account access
     const accounts = await window.ethereum.request({
       method: "eth_requestAccounts",
     });
     currentAccount = accounts[0];
 
-    // Initialize ethers.js
     provider = new ethers.BrowserProvider(window.ethereum);
     signer = await provider.getSigner();
 
-    // Check network
     const network = await provider.getNetwork();
     if (network.chainId !== BigInt(BASE_CHAIN_ID)) {
       await switchToBaseNetwork();
-      // Re-initialize provider and signer after network switch
       provider = new ethers.BrowserProvider(window.ethereum);
       signer = await provider.getSigner();
     }
 
-    // Initialize contract (use provider for read-only initially)
-    // Note: Contract address would be set after deployment
     if (hasDeployedContract()) {
       contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
-      await loadMessages();
-      await loadSentMessages();
     } else {
       contract = null;
       showNotification(
         `No deployed contract found for ${NETWORKS[selectedNetwork].name}. Deploy first, then update contractAddress in script.js.`,
         "warning",
       );
-      await loadMessages();
-      await loadSentMessages();
     }
 
-    // Update UI
     updateWalletUI();
     sendBtn.disabled = false;
 
+    await refreshMessagesUI();
+
     showNotification(
-      `Wallet connected: ${currentAccount.slice(0, 6)}...${currentAccount.slice(-4)}`,
+      `Wallet connected: ${shortAddress(currentAccount)}`,
       "success",
     );
   } catch (error) {
@@ -175,28 +248,22 @@ async function switchToBaseNetwork() {
     });
   } catch (switchError) {
     if (switchError.code === 4902) {
-      // Chain not added, try to add it
-      try {
-        await window.ethereum.request({
-          method: "wallet_addEthereumChain",
-          params: [
-            {
-              chainId: network.chainIdHex,
-              chainName: network.name,
-              rpcUrls: [network.rpcUrl],
-              nativeCurrency: {
-                name: "Ether",
-                symbol: network.symbol,
-                decimals: 18,
-              },
-              blockExplorerUrls: [network.explorerUrl],
+      await window.ethereum.request({
+        method: "wallet_addEthereumChain",
+        params: [
+          {
+            chainId: network.chainIdHex,
+            chainName: network.name,
+            rpcUrls: [network.rpcUrl],
+            nativeCurrency: {
+              name: "Ether",
+              symbol: network.symbol,
+              decimals: 18,
             },
-          ],
-        });
-      } catch (addError) {
-        showNotification(`Failed to add ${network.name} network.`, "error");
-        throw addError;
-      }
+            blockExplorerUrls: [network.explorerUrl],
+          },
+        ],
+      });
     } else {
       throw switchError;
     }
@@ -207,39 +274,33 @@ async function handleNetworkChange(event) {
   selectedNetwork = event.target.value;
   const network = NETWORKS[selectedNetwork];
 
-  // Update global variables
   CONTRACT_ADDRESS = network.contractAddress;
   BASE_CHAIN_ID = network.chainId;
-  BASE_RPC = network.rpcUrl;
 
   showNotification(`Network switched to ${network.name}`, "info");
 
-  // If wallet is connected, switch to the new network
-  if (currentAccount) {
-    try {
-      await switchToBaseNetwork();
+  if (!currentAccount) return;
 
-      // Reinitialize provider and signer for the new network
-      provider = new ethers.BrowserProvider(window.ethereum);
-      signer = await provider.getSigner();
+  try {
+    await switchToBaseNetwork();
 
-      // Reinitialize contract with new network
-      if (hasDeployedContract()) {
-        contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
-      } else {
-        contract = null;
-        showNotification(
-          `No deployed contract found for ${network.name}. Deploy first, then update contractAddress in script.js.`,
-          "warning",
-        );
-      }
+    provider = new ethers.BrowserProvider(window.ethereum);
+    signer = await provider.getSigner();
 
-      updateWalletUI();
-      await loadMessages();
-      await loadSentMessages();
-    } catch (error) {
-      showNotification(`Failed to switch network: ${error.message}`, "error");
+    if (hasDeployedContract()) {
+      contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+    } else {
+      contract = null;
+      showNotification(
+        `No deployed contract found for ${network.name}. Deploy first, then update contractAddress in script.js.`,
+        "warning",
+      );
     }
+
+    updateWalletUI();
+    await refreshMessagesUI();
+  } catch (error) {
+    showNotification(`Failed to switch network: ${error.message}`, "error");
   }
 }
 
@@ -249,15 +310,33 @@ function disconnectWallet() {
   signer = null;
   contract = null;
 
+  currentUserMessages = [];
+  selectedConversationAddress = null;
+
   walletInfo.style.display = "none";
   networkStatus.style.display = "none";
   connectBtn.style.display = "block";
   sendBtn.disabled = true;
-  networkSelect.disabled = false; // Enable network selection when disconnected
+  networkSelect.disabled = false;
+
   messagesList.innerHTML =
     '<p class="empty-state">Wallet disconnected. Connect to view messages.</p>';
   sentMessagesList.innerHTML =
     '<p class="empty-state">Wallet disconnected. Connect to view messages.</p>';
+  if (conversationList) {
+    conversationList.innerHTML =
+      '<p class="empty-state">Connect wallet to view conversations.</p>';
+  }
+  if (chatMessages) {
+    chatMessages.innerHTML =
+      '<p class="empty-state">Select a conversation to view chat history.</p>';
+  }
+  if (chatTitle) {
+    chatTitle.textContent = "Conversation";
+  }
+  if (chatPeerBadge) {
+    chatPeerBadge.textContent = "Select a chat";
+  }
 
   showNotification("Wallet disconnected", "info");
 }
@@ -269,7 +348,7 @@ function updateWalletUI() {
 
   networkStatus.style.display = "block";
   const network = NETWORKS[selectedNetwork];
-  networkInfo.textContent = `✓ Connected to ${network.name}`;
+  networkInfo.textContent = `Connected to ${network.name}`;
 }
 
 async function sendMessage(event) {
@@ -283,7 +362,6 @@ async function sendMessage(event) {
   const recipientAddress = document.getElementById("recipientAddress").value;
   const messageContent = messageText.value;
 
-  // Validate recipient address
   if (!ethers.isAddress(recipientAddress)) {
     showNotification("Invalid recipient address.", "error");
     return;
@@ -299,36 +377,20 @@ async function sendMessage(event) {
 
   try {
     if (contract) {
-      // Send through smart contract
       const tx = await contract.sendMessage(recipientAddress, messageContent);
-      showNotification("Transaction sent! Waiting for confirmation...", "info");
+      showNotification("Transaction sent. Waiting for confirmation...", "info");
       await tx.wait();
-
-      // Also save to local storage for immediate display
-      await sendMessageLocally(
-        currentAccount,
-        recipientAddress,
-        messageContent,
-      );
-
-      showNotification("Message sent successfully!", "success");
-    } else {
-      // Use local storage fallback
-      await sendMessageLocally(
-        currentAccount,
-        recipientAddress,
-        messageContent,
-      );
-      showNotification("Message saved locally!", "success");
     }
 
-    // Clear form
+    await sendMessageLocally(currentAccount, recipientAddress, messageContent);
+
     messageForm.reset();
     updateCharCount();
 
-    // Reload messages
-    await loadMessages();
-    await loadSentMessages();
+    selectedConversationAddress = recipientAddress;
+    await refreshMessagesUI();
+
+    showNotification("Message sent successfully.", "success");
   } catch (error) {
     console.error("Send error:", error);
     if (error.reason) {
@@ -345,153 +407,286 @@ async function sendMessage(event) {
 function updateCharCount() {
   const length = messageText.value.length;
   charCount.textContent = `${length}/500 characters`;
-  charCount.style.color = length > 400 ? "#ff9800" : "#999";
+  charCount.style.color = length > 400 ? "#b97905" : "#5a667f";
 }
 
-async function loadMessages() {
-  if (!currentAccount) {
-    messagesList.innerHTML =
-      '<p class="empty-state">Connect wallet to view messages.</p>';
-    return;
-  }
+async function fetchUserMessages() {
+  if (!currentAccount) return [];
 
-  try {
-    let messages = [];
+  const normalizedCurrent = normalizeAddress(currentAccount);
+  let received = [];
+  let sent = [];
 
-    // Try to load from contract if available
-    if (contract) {
-      try {
-        const contractMessages =
-          await contract.getReceivedMessages(currentAccount);
-        messages = contractMessages.map((msg) => ({
+  if (contract) {
+    try {
+      const [receivedFromContract, sentFromContract] = await Promise.all([
+        contract.getReceivedMessages(currentAccount),
+        contract.getSentMessages(currentAccount),
+      ]);
+
+      received = receivedFromContract.map((msg) =>
+        normalizeMessage({
           sender: msg.sender,
           recipient: msg.recipient,
           message: msg.messageText,
-          timestamp: Number(msg.timestamp),
-        }));
-      } catch (contractError) {
-        console.log(
-          "Could not fetch from contract, using local storage:",
-          contractError,
-        );
-        messages = getMessagesFromLocalStorage(currentAccount);
-      }
-    } else {
-      // Fallback to local storage
-      messages = getMessagesFromLocalStorage(currentAccount);
-    }
+          timestamp: msg.timestamp,
+        }),
+      );
 
-    if (messages.length === 0) {
-      messagesList.innerHTML =
-        '<p class="empty-state">No messages yet. Send one to get started!</p>';
-      return;
-    }
-
-    messagesList.innerHTML = messages
-      .map(
-        (msg) => `
-            <div class="message-item">
-                <div class="message-header">
-                    <span class="message-from">From: ${msg.sender.slice(0, 6)}...${msg.sender.slice(-4)}</span>
-                    <span class="message-time">${formatDate(msg.timestamp)}</span>
-                </div>
-                <div class="message-content">${escapeHtml(msg.message)}</div>
-            </div>
-        `,
-      )
-      .join("");
-  } catch (error) {
-    console.error("Load error:", error);
-    messagesList.innerHTML =
-      '<p class="empty-state">Error loading messages.</p>';
-  }
-}
-
-async function loadSentMessages() {
-  if (!currentAccount) {
-    sentMessagesList.innerHTML =
-      '<p class="empty-state">Connect wallet to view sent messages.</p>';
-    return;
-  }
-
-  try {
-    let sentMessages = [];
-
-    // Try to load from contract if available
-    if (contract) {
-      try {
-        const contractMessages = await contract.getSentMessages(currentAccount);
-        sentMessages = contractMessages.map((msg) => ({
+      sent = sentFromContract.map((msg) =>
+        normalizeMessage({
           sender: msg.sender,
           recipient: msg.recipient,
           message: msg.messageText,
-          timestamp: Number(msg.timestamp),
-        }));
-      } catch (contractError) {
-        console.log(
-          "Could not fetch from contract, using local storage:",
-          contractError,
-        );
-        sentMessages = getSentMessagesFromLocalStorage(currentAccount);
-      }
-    } else {
-      // Fallback to local storage
-      sentMessages = getSentMessagesFromLocalStorage(currentAccount);
+          timestamp: msg.timestamp,
+        }),
+      );
+    } catch (contractError) {
+      console.log("Contract fetch failed, using local storage:", contractError);
     }
-
-    if (sentMessages.length === 0) {
-      sentMessagesList.innerHTML =
-        '<p class="empty-state">No sent messages yet. Send a message to get started!</p>';
-      return;
-    }
-
-    sentMessagesList.innerHTML = sentMessages
-      .map(
-        (msg) => `
-            <div class="message-item">
-                <div class="message-header">
-                    <span class="message-to">To: ${msg.recipient.slice(0, 6)}...${msg.recipient.slice(-4)}</span>
-                    <span class="message-time">${formatDate(msg.timestamp)}</span>
-                </div>
-                <div class="message-content">${escapeHtml(msg.message)}</div>
-            </div>
-        `,
-      )
-      .join("");
-  } catch (error) {
-    console.error("Load sent messages error:", error);
-    sentMessagesList.innerHTML =
-      '<p class="empty-state">Error loading sent messages.</p>';
   }
+
+  const localMessages = getAllMessagesFromLocalStorage();
+
+  const relevantLocalMessages = localMessages.filter((msg) => {
+    return (
+      compareAddress(msg.sender, normalizedCurrent) ||
+      compareAddress(msg.recipient, normalizedCurrent)
+    );
+  });
+
+  const merged = dedupeMessages([
+    ...received,
+    ...sent,
+    ...relevantLocalMessages,
+  ]);
+  return merged.sort((a, b) => a.timestamp - b.timestamp);
 }
 
-// Local Storage Functions (fallback when contract not deployed)
-function getMessagesFromLocalStorage(address) {
-  const allMessages = JSON.parse(
-    localStorage.getItem("blockchainMessages") || "[]",
-  );
-  return allMessages
-    .filter((msg) => msg.recipient.toLowerCase() === address.toLowerCase())
+async function refreshMessagesUI() {
+  if (!currentAccount) return;
+
+  currentUserMessages = await fetchUserMessages();
+
+  const receivedMessages = currentUserMessages
+    .filter((msg) => compareAddress(msg.recipient, currentAccount))
     .sort((a, b) => b.timestamp - a.timestamp);
+
+  const sentMessages = currentUserMessages
+    .filter((msg) => compareAddress(msg.sender, currentAccount))
+    .sort((a, b) => b.timestamp - a.timestamp);
+
+  renderInbox(receivedMessages);
+  renderSent(sentMessages);
+
+  const conversations = buildConversations();
+  if (conversations.length > 0 && !selectedConversationAddress) {
+    selectedConversationAddress = conversations[0].peer;
+  }
+
+  if (
+    selectedConversationAddress &&
+    !conversations.some((conversation) =>
+      compareAddress(conversation.peer, selectedConversationAddress),
+    )
+  ) {
+    selectedConversationAddress =
+      conversations.length > 0 ? conversations[0].peer : null;
+  }
+
+  if (selectedConversationAddress) {
+    markConversationAsRead(selectedConversationAddress);
+  }
+
+  renderConversations();
+  renderConversationChat();
 }
 
-function getSentMessagesFromLocalStorage(address) {
-  const allMessages = JSON.parse(
-    localStorage.getItem("blockchainMessages") || "[]",
+function renderInbox(messages) {
+  if (!messages.length) {
+    messagesList.innerHTML =
+      '<p class="empty-state">No inbox messages yet.</p>';
+    return;
+  }
+
+  messagesList.innerHTML = messages
+    .map(
+      (msg) => `
+        <div class="message-item">
+          <div class="message-header">
+            <span class="message-from">From: ${shortAddress(msg.sender)}</span>
+            <span class="message-time">${formatDate(msg.timestamp)}</span>
+          </div>
+          <div class="message-content">${escapeHtml(msg.message)}</div>
+        </div>
+      `,
+    )
+    .join("");
+}
+
+function renderSent(messages) {
+  if (!messages.length) {
+    sentMessagesList.innerHTML =
+      '<p class="empty-state">No sent messages yet.</p>';
+    return;
+  }
+
+  sentMessagesList.innerHTML = messages
+    .map(
+      (msg) => `
+        <div class="message-item">
+          <div class="message-header">
+            <span class="message-to">To: ${shortAddress(msg.recipient)}</span>
+            <span class="message-time">${formatDate(msg.timestamp)}</span>
+          </div>
+          <div class="message-content">${escapeHtml(msg.message)}</div>
+        </div>
+      `,
+    )
+    .join("");
+}
+
+function buildConversations() {
+  if (!currentAccount) return [];
+
+  const conversationMap = new Map();
+
+  currentUserMessages.forEach((msg) => {
+    const outgoing = compareAddress(msg.sender, currentAccount);
+    const peer = outgoing ? msg.recipient : msg.sender;
+    const key = normalizeAddress(peer);
+
+    if (!conversationMap.has(key)) {
+      conversationMap.set(key, {
+        peer,
+        latestMessage: msg,
+      });
+    } else {
+      const existing = conversationMap.get(key);
+      if (msg.timestamp > existing.latestMessage.timestamp) {
+        existing.latestMessage = msg;
+      }
+    }
+  });
+
+  return Array.from(conversationMap.values())
+    .filter((conversation) =>
+      normalizeAddress(conversation.peer).includes(conversationSearchTerm),
+    )
+    .sort((a, b) => b.latestMessage.timestamp - a.latestMessage.timestamp);
+}
+
+function renderConversations() {
+  const conversations = buildConversations();
+
+  if (!conversations.length) {
+    conversationList.innerHTML =
+      '<p class="empty-state">No conversations found for this wallet.</p>';
+    return;
+  }
+
+  conversationList.innerHTML = conversations
+    .map((conversation) => {
+      const peerAddress = conversation.peer;
+      const unread = getUnreadCountForPeer(peerAddress);
+      const isActive =
+        selectedConversationAddress &&
+        compareAddress(selectedConversationAddress, peerAddress);
+
+      return `
+        <button
+          class="conversation-item ${isActive ? "active" : ""}"
+          data-peer="${peerAddress}"
+          type="button"
+        >
+          <div class="conversation-main">
+            <span class="conversation-address">${shortAddress(peerAddress)}</span>
+            <span class="conversation-preview">${escapeHtml(conversation.latestMessage.message)}</span>
+          </div>
+          <div class="conversation-meta">
+            <span class="message-time">${formatDate(conversation.latestMessage.timestamp)}</span>
+            ${unread > 0 ? `<span class="unread-badge">${unread}</span>` : ""}
+          </div>
+        </button>
+      `;
+    })
+    .join("");
+
+  conversationList.querySelectorAll(".conversation-item").forEach((item) => {
+    item.addEventListener("click", () => {
+      selectedConversationAddress = item.getAttribute("data-peer");
+      markConversationAsRead(selectedConversationAddress);
+      renderConversations();
+      renderConversationChat();
+    });
+  });
+}
+
+function buildConversationThread(peerAddress) {
+  if (!currentAccount || !peerAddress) return [];
+
+  return currentUserMessages
+    .filter((msg) => {
+      const a =
+        compareAddress(msg.sender, currentAccount) &&
+        compareAddress(msg.recipient, peerAddress);
+      const b =
+        compareAddress(msg.sender, peerAddress) &&
+        compareAddress(msg.recipient, currentAccount);
+      return a || b;
+    })
+    .sort((a, b) => a.timestamp - b.timestamp);
+}
+
+function renderConversationChat() {
+  if (!selectedConversationAddress) {
+    chatTitle.textContent = "Conversation";
+    chatPeerBadge.textContent = "Select a chat";
+    chatMessages.innerHTML =
+      '<p class="empty-state">Select a conversation to view chat history.</p>';
+    return;
+  }
+
+  const peer = selectedConversationAddress;
+  const messages = buildConversationThread(peer);
+
+  chatTitle.textContent = `Chat with ${shortAddress(peer)}`;
+  chatPeerBadge.textContent = shortAddress(peer);
+
+  if (!messages.length) {
+    chatMessages.innerHTML =
+      '<p class="empty-state">No messages in this chat.</p>';
+    return;
+  }
+
+  chatMessages.innerHTML = messages
+    .map((msg) => {
+      const outgoing = compareAddress(msg.sender, currentAccount);
+      return `
+        <div class="chat-message ${outgoing ? "outgoing" : "incoming"}">
+          <span class="chat-direction">${outgoing ? "You" : "Peer"}</span>
+          <div class="message-content">${escapeHtml(msg.message)}</div>
+          <span class="chat-time">${formatDate(msg.timestamp)}</span>
+        </div>
+      `;
+    })
+    .join("");
+
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function getAllMessagesFromLocalStorage() {
+  return JSON.parse(localStorage.getItem("blockchainMessages") || "[]").map(
+    (msg) => normalizeMessage(msg),
   );
-  return allMessages
-    .filter((msg) => msg.sender.toLowerCase() === address.toLowerCase())
-    .sort((a, b) => b.timestamp - a.timestamp);
 }
 
 function sendMessageLocally(sender, recipient, message) {
-  const allMessages = JSON.parse(
-    localStorage.getItem("blockchainMessages") || "[]",
-  );
+  const allMessages = getAllMessagesFromLocalStorage();
   const newMessage = {
-    sender: sender,
-    recipient: recipient,
-    message: message,
+    sender,
+    recipient,
+    message,
     timestamp: Math.floor(Date.now() / 1000),
   };
   allMessages.push(newMessage);
@@ -499,7 +694,6 @@ function sendMessageLocally(sender, recipient, message) {
   return Promise.resolve();
 }
 
-// Utility Functions
 function showNotification(message, type = "info") {
   notification.textContent = message;
   notification.className = `notification ${type}`;
@@ -511,7 +705,7 @@ function showNotification(message, type = "info") {
 }
 
 function formatDate(timestamp) {
-  const date = new Date(timestamp * 1000);
+  const date = new Date(Number(timestamp) * 1000);
   const now = new Date();
   const diff = now - date;
   const minutes = Math.floor(diff / 60000);
@@ -532,22 +726,20 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-function handleAccountsChanged(accounts) {
+async function handleAccountsChanged(accounts) {
   if (accounts.length === 0) {
     disconnectWallet();
-  } else if (accounts[0] !== currentAccount) {
+    return;
+  }
+
+  if (!compareAddress(accounts[0], currentAccount)) {
     currentAccount = accounts[0];
     updateWalletUI();
-    loadMessages();
-    loadSentMessages();
-    showNotification(
-      `Switched to ${accounts[0].slice(0, 6)}...${accounts[0].slice(-4)}`,
-      "info",
-    );
+    await refreshMessagesUI();
+    showNotification(`Switched to ${shortAddress(accounts[0])}`, "info");
   }
 }
 
-function handleChainChanged(chainId) {
-  // Reload the page
+function handleChainChanged() {
   window.location.reload();
 }
