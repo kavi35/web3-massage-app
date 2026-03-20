@@ -61,8 +61,11 @@ const conversationList = document.getElementById("conversationList");
 const chatMessages = document.getElementById("chatMessages");
 const chatTitle = document.getElementById("chatTitle");
 const chatPeerBadge = document.getElementById("chatPeerBadge");
+const themeToggleBtn = document.getElementById("themeToggleBtn");
 
 document.addEventListener("DOMContentLoaded", () => {
+  initializeTheme();
+
   if (typeof ethers === "undefined") {
     console.error("Ethers.js not loaded. Retrying...");
     setTimeout(() => {
@@ -82,6 +85,10 @@ document.addEventListener("DOMContentLoaded", () => {
       conversationSearchTerm = event.target.value.trim().toLowerCase();
       renderConversations();
     });
+  }
+
+  if (themeToggleBtn) {
+    themeToggleBtn.addEventListener("click", toggleTheme);
   }
 
   checkIfWalletConnected();
@@ -107,6 +114,33 @@ async function checkIfWalletConnected() {
 
 function hasDeployedContract() {
   return CONTRACT_ADDRESS !== ZERO_ADDRESS;
+}
+
+function getInitialTheme() {
+  const savedTheme = localStorage.getItem("uiTheme");
+  if (savedTheme === "dark" || savedTheme === "light") {
+    return savedTheme;
+  }
+
+  return "dark";
+}
+
+function applyTheme(theme) {
+  document.body.setAttribute("data-theme", theme);
+  if (!themeToggleBtn) return;
+  themeToggleBtn.textContent =
+    theme === "dark" ? "Switch to Light" : "Switch to Dark";
+}
+
+function initializeTheme() {
+  applyTheme(getInitialTheme());
+}
+
+function toggleTheme() {
+  const currentTheme = document.body.getAttribute("data-theme") || "light";
+  const nextTheme = currentTheme === "dark" ? "light" : "dark";
+  applyTheme(nextTheme);
+  localStorage.setItem("uiTheme", nextTheme);
 }
 
 function normalizeAddress(address) {
