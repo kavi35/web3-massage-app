@@ -122,7 +122,10 @@ function getInitialTheme() {
     return savedTheme;
   }
 
-  return "dark";
+  const prefersDark =
+    window.matchMedia &&
+    window.matchMedia("(prefers-color-scheme: dark)").matches;
+  return prefersDark ? "dark" : "light";
 }
 
 function applyTheme(theme) {
@@ -414,22 +417,17 @@ async function sendMessage(event) {
       const tx = await contract.sendMessage(recipientAddress, messageContent);
       showNotification("Transaction sent. Waiting for confirmation...", "info");
       await tx.wait();
-      showNotification("Message sent successfully.", "success");
-    } else {
-      // Fallback: save to local storage only if no contract
-      await sendMessageLocally(
-        currentAccount,
-        recipientAddress,
-        messageContent,
-      );
-      showNotification("Message saved locally.", "success");
     }
+
+    await sendMessageLocally(currentAccount, recipientAddress, messageContent);
 
     messageForm.reset();
     updateCharCount();
 
     selectedConversationAddress = recipientAddress;
     await refreshMessagesUI();
+
+    showNotification("Message sent successfully.", "success");
   } catch (error) {
     console.error("Send error:", error);
     if (error.reason) {
