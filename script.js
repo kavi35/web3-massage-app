@@ -409,9 +409,13 @@ async function sendMessage(event) {
       const tx = await contract.sendMessage(recipientAddress, messageContent);
       showNotification("Transaction sent. Waiting for confirmation...", "info");
       await tx.wait();
+    } else {
+      await sendMessageLocally(
+        currentAccount,
+        recipientAddress,
+        messageContent,
+      );
     }
-
-    await sendMessageLocally(currentAccount, recipientAddress, messageContent);
 
     messageForm.reset();
     updateCharCount();
