@@ -117,15 +117,7 @@ function hasDeployedContract() {
 }
 
 function getInitialTheme() {
-  const savedTheme = localStorage.getItem("uiTheme");
-  if (savedTheme === "dark" || savedTheme === "light") {
-    return savedTheme;
-  }
-
-  const prefersDark =
-    window.matchMedia &&
-    window.matchMedia("(prefers-color-scheme: dark)").matches;
-  return prefersDark ? "dark" : "light";
+  return "light";
 }
 
 function applyTheme(theme) {
