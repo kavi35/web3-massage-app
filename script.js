@@ -266,21 +266,23 @@ function normalizeMessage(msg) {
 }
 
 function dedupeMessages(messages) {
-  const seen = new Set();
+  const seenTransferTx = new Set();
+
   return messages.filter((msg) => {
-    const key = [
+    if (msg.kind !== "transfer" || !msg.txHash) {
+      // Keep all normal chat messages to avoid losing repeated texts
+      // that can share the same second-level timestamp.
+      return true;
+    }
+
+    const txKey = [
       normalizeAddress(msg.sender),
       normalizeAddress(msg.recipient),
-      msg.kind || "message",
-      msg.message,
-      msg.asset || "",
-      msg.amount || "",
-      msg.txHash || "",
-      Number(msg.timestamp),
+      msg.txHash,
     ].join("|");
 
-    if (seen.has(key)) return false;
-    seen.add(key);
+    if (seenTransferTx.has(txKey)) return false;
+    seenTransferTx.add(txKey);
     return true;
   });
 }
