@@ -490,11 +490,41 @@ small {
   padding-right: 4px;
 }
 
+.chat-transfer-form {
+  margin-top: 14px;
+  border-top: 1px solid rgba(18, 46, 84, 0.16);
+  padding-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.transfer-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.transfer-head h3 {
+  font-size: 1rem;
+}
+
+.transfer-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
 .chat-message {
   max-width: min(86%, 640px);
   border-radius: 14px;
   padding: 11px 12px;
   border: 1px solid rgba(18, 46, 84, 0.14);
+}
+
+.chat-message.transfer-message {
+  border-style: solid;
 }
 
 .chat-message.outgoing {
@@ -514,6 +544,36 @@ small {
   font-size: 0.76rem;
   margin-bottom: 5px;
   font-weight: 700;
+}
+
+.transfer-summary {
+  color: var(--ink);
+  font-size: 0.94rem;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.chat-hash-label {
+  display: block;
+  margin-top: 8px;
+  color: var(--ink-soft);
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.chat-hash-link {
+  display: inline-block;
+  margin-top: 4px;
+  color: var(--signal);
+  font-family: "IBM Plex Mono", "Courier New", monospace;
+  font-size: 0.8rem;
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.chat-hash-link:hover {
+  text-decoration: underline;
 }
 
 .chat-time {
@@ -640,5 +700,9 @@ small {
     flex-direction: column;
     align-items: flex-start;
     gap: 2px;
+  }
+
+  .transfer-row {
+    grid-template-columns: 1fr;
   }
 }

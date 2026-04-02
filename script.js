@@ -6,6 +6,7 @@ const NETWORKS = {
     rpcUrl: "https://mainnet.base.org",
     name: "Base Mainnet",
     contractAddress: "0xE28CB05F55438Cc2F878CF962CF5CA8B38a88418",
+    usdcAddress: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
     explorerUrl: "https://basescan.org",
     symbol: "ETH",
   },
@@ -15,6 +16,7 @@ const NETWORKS = {
     rpcUrl: "https://sepolia.base.org",
     name: "Base Sepolia (Testnet)",
     contractAddress: "0x5C2f1E2c7094E65AAA3cF2dfd612A685b2C9D5a9",
+    usdcAddress: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
     explorerUrl: "https://sepolia.basescan.org",
     symbol: "ETH",
   },
@@ -31,6 +33,11 @@ const CONTRACT_ABI = [
   "function getSentMessages(address user) public view returns (tuple(address sender, address recipient, string messageText, uint256 timestamp)[])",
   "function getTotalMessageCount() public view returns (uint256)",
   "event MessageSent(indexed address sender, indexed address recipient, string messageText, uint256 timestamp)",
+];
+
+const ERC20_ABI = [
+  "function transfer(address to, uint256 value) returns (bool)",
+  "function decimals() view returns (uint8)",
 ];
 
 let currentAccount = null;
@@ -61,6 +68,11 @@ const conversationList = document.getElementById("conversationList");
 const chatMessages = document.getElementById("chatMessages");
 const chatTitle = document.getElementById("chatTitle");
 const chatPeerBadge = document.getElementById("chatPeerBadge");
+const chatTransferForm = document.getElementById("chatTransferForm");
+const transferAsset = document.getElementById("transferAsset");
+const transferAmount = document.getElementById("transferAmount");
+const transferRecipientHint = document.getElementById("transferRecipientHint");
+const sendMoneyBtn = document.getElementById("sendMoneyBtn");
 const themeToggleBtn = document.getElementById("themeToggleBtn");
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -78,6 +90,10 @@ document.addEventListener("DOMContentLoaded", () => {
   disconnectBtn.addEventListener("click", disconnectWallet);
   messageForm.addEventListener("submit", sendMessage);
   messageText.addEventListener("input", updateCharCount);
+  const recipientAddressInput = document.getElementById("recipientAddress");
+  if (recipientAddressInput) {
+    recipientAddressInput.addEventListener("input", updateTransferUIState);
+  }
   networkSelect.addEventListener("change", handleNetworkChange);
 
   if (conversationSearch) {
@@ -89,6 +105,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (themeToggleBtn) {
     themeToggleBtn.addEventListener("click", toggleTheme);
+  }
+
+  if (chatTransferForm) {
+    chatTransferForm.addEventListener("submit", sendMoneyFromChat);
   }
 
   checkIfWalletConnected();
@@ -147,6 +167,49 @@ function shortAddress(address) {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
+function getUsdcAddress() {
+  return NETWORKS[selectedNetwork]?.usdcAddress || ZERO_ADDRESS;
+}
+
+function updateTransferUIState() {
+  if (!sendMoneyBtn || !transferRecipientHint) return;
+
+  const recipientInput = document.getElementById("recipientAddress");
+  const typedRecipient = String(recipientInput?.value || "").trim();
+  const typedRecipientIsValid = typedRecipient
+    ? ethers.isAddress(typedRecipient)
+    : false;
+  const fallbackRecipient =
+    selectedConversationAddress && ethers.isAddress(selectedConversationAddress)
+      ? selectedConversationAddress
+      : "";
+  const resolvedRecipient = typedRecipientIsValid
+    ? typedRecipient
+    : typedRecipient.length === 0
+      ? fallbackRecipient
+      : "";
+
+  const canTransfer = Boolean(currentAccount && resolvedRecipient);
+  sendMoneyBtn.disabled = !canTransfer;
+
+  if (!currentAccount) {
+    transferRecipientHint.textContent = "Connect wallet to send funds.";
+    return;
+  }
+
+  if (typedRecipient && !typedRecipientIsValid) {
+    transferRecipientHint.textContent = "Enter a valid recipient address.";
+    return;
+  }
+
+  if (!resolvedRecipient) {
+    transferRecipientHint.textContent = "Select a conversation first.";
+    return;
+  }
+
+  transferRecipientHint.textContent = `To ${shortAddress(resolvedRecipient)}`;
+}
+
 function compareAddress(a, b) {
   return normalizeAddress(a) === normalizeAddress(b);
 }
@@ -192,7 +255,12 @@ function normalizeMessage(msg) {
   return {
     sender: msg.sender,
     recipient: msg.recipient,
+    kind: msg.kind || "message",
     message: msg.message,
+    asset: msg.asset || null,
+    amount: msg.amount || null,
+    txHash: msg.txHash || null,
+    explorerUrl: msg.explorerUrl || null,
     timestamp: Number(msg.timestamp),
   };
 }
@@ -203,7 +271,11 @@ function dedupeMessages(messages) {
     const key = [
       normalizeAddress(msg.sender),
       normalizeAddress(msg.recipient),
+      msg.kind || "message",
       msg.message,
+      msg.asset || "",
+      msg.amount || "",
+      msg.txHash || "",
       Number(msg.timestamp),
     ].join("|");
 
@@ -367,6 +439,8 @@ function disconnectWallet() {
     chatPeerBadge.textContent = "Select a chat";
   }
 
+  updateTransferUIState();
+
   showNotification("Wallet disconnected", "info");
 }
 
@@ -434,6 +508,99 @@ async function sendMessage(event) {
   } finally {
     sendBtn.disabled = false;
     sendBtn.textContent = "Send Message";
+  }
+}
+
+async function sendMoneyFromChat(event) {
+  event.preventDefault();
+
+  if (!currentAccount) {
+    showNotification("Please connect wallet first.", "warning");
+    return;
+  }
+
+  const recipientInput = document.getElementById("recipientAddress");
+  const typedRecipient = String(recipientInput?.value || "").trim();
+  let recipientAddress = "";
+
+  if (typedRecipient.length > 0) {
+    if (!ethers.isAddress(typedRecipient)) {
+      showNotification("Enter a valid recipient address.", "warning");
+      return;
+    }
+    recipientAddress = typedRecipient;
+  } else if (
+    selectedConversationAddress &&
+    ethers.isAddress(selectedConversationAddress)
+  ) {
+    recipientAddress = selectedConversationAddress;
+  }
+
+  if (!recipientAddress) {
+    showNotification(
+      "Select a conversation or enter a recipient address.",
+      "warning",
+    );
+    return;
+  }
+
+  const amountInput = String(transferAmount?.value || "").trim();
+  if (!amountInput || Number(amountInput) <= 0) {
+    showNotification("Enter a valid amount greater than 0.", "error");
+    return;
+  }
+
+  const asset = transferAsset?.value || "ETH";
+
+  sendMoneyBtn.disabled = true;
+  sendMoneyBtn.textContent = "Sending...";
+
+  try {
+    let tx;
+
+    if (asset === "USDC") {
+      const usdcAddress = getUsdcAddress();
+      if (!usdcAddress || usdcAddress === ZERO_ADDRESS) {
+        throw new Error(
+          `USDC is not configured for ${NETWORKS[selectedNetwork].name}.`,
+        );
+      }
+
+      const usdc = new ethers.Contract(usdcAddress, ERC20_ABI, signer);
+      const decimals = await usdc.decimals();
+      const amountUnits = ethers.parseUnits(amountInput, Number(decimals));
+      tx = await usdc.transfer(recipientAddress, amountUnits);
+    } else {
+      const value = ethers.parseEther(amountInput);
+      tx = await signer.sendTransaction({
+        to: recipientAddress,
+        value,
+      });
+    }
+
+    showNotification("Transfer sent. Waiting for confirmation...", "info");
+    await tx.wait();
+    transferAmount.value = "";
+
+    storeTransferLocally({
+      sender: currentAccount,
+      recipient: recipientAddress,
+      kind: "transfer",
+      asset,
+      amount: amountInput,
+      txHash: tx.hash || "",
+      explorerUrl: NETWORKS[selectedNetwork]?.explorerUrl || "",
+    });
+
+    await refreshMessagesUI();
+
+    showNotification(`${asset} transfer confirmed.`, "success");
+  } catch (error) {
+    const message = error?.reason || error?.message || "Transfer failed.";
+    showNotification(`Transfer failed: ${message}`, "error");
+  } finally {
+    sendMoneyBtn.textContent = "Send Money";
+    updateTransferUIState();
   }
 }
 
@@ -533,6 +700,7 @@ async function refreshMessagesUI() {
 
   renderConversations();
   renderConversationChat();
+  updateTransferUIState();
 }
 
 function renderInbox(messages) {
@@ -550,7 +718,7 @@ function renderInbox(messages) {
             <span class="message-from">From: ${shortAddress(msg.sender)}</span>
             <span class="message-time">${formatDate(msg.timestamp)}</span>
           </div>
-          <div class="message-content">${escapeHtml(msg.message)}</div>
+          <div class="message-content">${escapeHtml(formatMessagePreview(msg))}</div>
         </div>
       `,
     )
@@ -572,7 +740,7 @@ function renderSent(messages) {
             <span class="message-to">To: ${shortAddress(msg.recipient)}</span>
             <span class="message-time">${formatDate(msg.timestamp)}</span>
           </div>
-          <div class="message-content">${escapeHtml(msg.message)}</div>
+          <div class="message-content">${escapeHtml(formatMessagePreview(msg))}</div>
         </div>
       `,
     )
@@ -634,7 +802,7 @@ function renderConversations() {
         >
           <div class="conversation-main">
             <span class="conversation-address">${shortAddress(peerAddress)}</span>
-            <span class="conversation-preview">${escapeHtml(conversation.latestMessage.message)}</span>
+            <span class="conversation-preview">${escapeHtml(formatMessagePreview(conversation.latestMessage))}</span>
           </div>
           <div class="conversation-meta">
             <span class="message-time">${formatDate(conversation.latestMessage.timestamp)}</span>
@@ -648,9 +816,14 @@ function renderConversations() {
   conversationList.querySelectorAll(".conversation-item").forEach((item) => {
     item.addEventListener("click", () => {
       selectedConversationAddress = item.getAttribute("data-peer");
+      const recipientInput = document.getElementById("recipientAddress");
+      if (recipientInput) {
+        recipientInput.value = selectedConversationAddress;
+      }
       markConversationAsRead(selectedConversationAddress);
       renderConversations();
       renderConversationChat();
+      updateTransferUIState();
     });
   });
 }
@@ -677,6 +850,7 @@ function renderConversationChat() {
     chatPeerBadge.textContent = "Select a chat";
     chatMessages.innerHTML =
       '<p class="empty-state">Select a conversation to view chat history.</p>';
+    updateTransferUIState();
     return;
   }
 
@@ -695,10 +869,33 @@ function renderConversationChat() {
   chatMessages.innerHTML = messages
     .map((msg) => {
       const outgoing = compareAddress(msg.sender, currentAccount);
+      const txHashLine =
+        msg.kind === "transfer" && msg.txHash
+          ? `
+          <span class="chat-hash-label">Transaction Hash</span>
+          <a
+            class="chat-hash-link"
+            href="${msg.explorerUrl ? `${msg.explorerUrl}/tx/${msg.txHash}` : `https://basescan.org/tx/${msg.txHash}`}"
+            target="_blank"
+            rel="noreferrer"
+          >
+            ${shortHash(msg.txHash)}
+          </a>
+        `
+          : "";
+
+      const transferBody =
+        msg.kind === "transfer"
+          ? `
+            <div class="transfer-summary">${escapeHtml(formatTransferSummary(msg))}</div>
+            ${txHashLine}
+          `
+          : `<div class="message-content">${escapeHtml(msg.message)}</div>`;
+
       return `
-        <div class="chat-message ${outgoing ? "outgoing" : "incoming"}">
+        <div class="chat-message ${outgoing ? "outgoing" : "incoming"} ${msg.kind === "transfer" ? "transfer-message" : ""}">
           <span class="chat-direction">${outgoing ? "You" : "Peer"}</span>
-          <div class="message-content">${escapeHtml(msg.message)}</div>
+          ${transferBody}
           <span class="chat-time">${formatDate(msg.timestamp)}</span>
         </div>
       `;
@@ -706,6 +903,7 @@ function renderConversationChat() {
     .join("");
 
   chatMessages.scrollTop = chatMessages.scrollHeight;
+  updateTransferUIState();
 }
 
 function getAllMessagesFromLocalStorage() {
@@ -719,12 +917,67 @@ function sendMessageLocally(sender, recipient, message) {
   const newMessage = {
     sender,
     recipient,
+    kind: "message",
     message,
     timestamp: Math.floor(Date.now() / 1000),
   };
   allMessages.push(newMessage);
   localStorage.setItem("blockchainMessages", JSON.stringify(allMessages));
   return Promise.resolve();
+}
+
+function storeTransferLocally({
+  sender,
+  recipient,
+  kind,
+  asset,
+  amount,
+  txHash,
+  explorerUrl,
+}) {
+  const allMessages = getAllMessagesFromLocalStorage();
+  const normalizedAmount = String(amount || "").trim();
+  const normalizedAsset = String(asset || "")
+    .trim()
+    .toUpperCase();
+  const summary = `${normalizedAmount} ${normalizedAsset}`.trim();
+
+  allMessages.push({
+    sender,
+    recipient,
+    kind: kind || "transfer",
+    message: summary,
+    asset: normalizedAsset,
+    amount: normalizedAmount,
+    txHash: txHash || "",
+    explorerUrl: explorerUrl || "",
+    timestamp: Math.floor(Date.now() / 1000),
+  });
+
+  localStorage.setItem("blockchainMessages", JSON.stringify(allMessages));
+}
+
+function formatTransferSummary(msg) {
+  const amount = String(msg.amount || msg.message || "").trim();
+  const asset = String(msg.asset || "")
+    .trim()
+    .toUpperCase();
+  const base = asset ? `${amount} ${asset}` : amount;
+  return `${compareAddress(msg.sender, currentAccount) ? "You sent" : "Received"} ${base}`.trim();
+}
+
+function formatMessagePreview(msg) {
+  if (msg.kind === "transfer") {
+    const txHash = msg.txHash ? ` • ${shortHash(msg.txHash)}` : "";
+    return `${formatTransferSummary(msg)}${txHash}`;
+  }
+
+  return msg.message;
+}
+
+function shortHash(hash) {
+  if (!hash || hash.length <= 12) return hash;
+  return `${hash.slice(0, 8)}...${hash.slice(-6)}`;
 }
 
 function showNotification(message, type = "info") {
