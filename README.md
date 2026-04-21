@@ -21,6 +21,30 @@ A simple decentralized messaging application built on Base L2 network that allow
 - MetaMask or another Ethereum-compatible Web3 wallet
 - ETH on Base L2 network (for transaction fees)
 
+### Run with Docker
+
+```bash
+# Build image
+docker build -t blockchain-messenger .
+
+# Run container
+docker run --rm -p 8000:8000 blockchain-messenger
+```
+
+Open: `http://localhost:8000`
+
+### Run with Docker Compose
+
+```bash
+docker compose up --build
+```
+
+To stop:
+
+```bash
+docker compose down
+```
+
 ### Using the Application
 
 1. **Open `index.html`** in your web browser
